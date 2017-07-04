@@ -1,0 +1,14 @@
+#!/bin/bash
+
+set -e
+
+PROJECT_ROOT="$(dirname "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )")"
+SRC_DIR="$PROJECT_ROOT/src"
+
+docker run --rm -it \
+    -v "$SRC_DIR":/opt/src \
+    pytorch python -m unittest
+
+docker run --rm -it \
+    -v "$SRC_DIR":/opt/src \
+    pytorch flake8 .

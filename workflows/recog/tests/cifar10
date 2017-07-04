@@ -1,0 +1,15 @@
+#!/bin/bash
+
+make -f /opt/src/workflows/recog/Makefile $1 \
+  namespace=recog/cifar10 \
+  dataset=cifar10 \
+  input_shape="3 32 32" \
+  model_name=mini \
+  batch_size=64 \
+  val_batch_size=256 \
+  samples_per_epoch=-1 \
+  val_samples_per_epoch=-1 \
+  epochs=5 \
+  nsamples=-1 \
+  max_plots=20 \
+  log_interval=10
