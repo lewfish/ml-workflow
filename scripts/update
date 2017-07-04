@@ -1,0 +1,21 @@
+#!/bin/bash
+
+set -e
+
+function usage() {
+    echo -n \
+         "Usage: $(basename "$0")
+Build docker image with PyTorch.
+"
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ]
+then
+    if [ "${1:-}" = "--help" ]
+    then
+        usage
+        exit
+    fi
+
+    docker build -t pytorch -f docker/Dockerfile docker
+fi

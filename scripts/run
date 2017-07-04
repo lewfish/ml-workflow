@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -e
+
+PROJECT_ROOT="$(dirname "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )")"
+
+function usage() {
+    echo -n \
+         "Usage: $(basename "$0") (--local)
+Run PyTorch Docker image.
+All arguments except the first are passed to 'docker run'.
+"
+}
+
+if [ "${BASH_SOURCE[0]}" = "${0}" ]
+then
+    if [ "${1:-}" = "--local" ]
+    then
+        SRC_DIR="$PROJECT_ROOT"
+        DATA_DIR="$DATA_DIR"
+
+        docker run --rm -it \
+            -v "$SRC_DIR":/opt/src \
+            -v "$DATA_DIR":/opt/data \
+            -p 8888:8888 \
+            pytorch "${@:2}"
+    else
+        usage
+    fi
+fi

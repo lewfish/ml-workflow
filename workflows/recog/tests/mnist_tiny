@@ -1,0 +1,3 @@
+#!/bin/bash
+
+make -f /opt/src/workflows/recog/Makefile $1
