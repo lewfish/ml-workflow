@@ -1,20 +1,16 @@
 from os.path import join
-import argparse
 
 import matplotlib as mpl
 # For headless environments
 mpl.use('Agg') # NOQA
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
+import luigi
 
 from pt.common.settings import results_path, TRAIN
-from pt.common.utils import safe_makedirs
 from pt.recog.data.factory import (
-    get_data_loader, MNIST, DEFAULT, NORMALIZE)
-from pt.recog.tasks.utils import add_common_args
-
-PLOT_DATA = 'plot_data'
+    get_data_loader, DEFAULT, NORMALIZE)
+from pt.recog.tasks.utils import RecogTask
 
 
 def plot_images(plot_path, images, labels, ncols=4, normalize=True):
@@ -46,51 +42,37 @@ def plot_images(plot_path, images, labels, ncols=4, normalize=True):
             break
 
     plt.tight_layout()
-    plt.savefig(plot_path)
+    plt.savefig(plot_path, format='png')
 
 
-def plot_data(args):
-    task_path = join(results_path, args.namespace, PLOT_DATA)
-    safe_makedirs(task_path)
+class PlotDataTask(RecogTask):
+    dataset = luigi.Parameter()
+    loader = luigi.Parameter(default=DEFAULT)
+    transforms = luigi.ListParameter(default=[NORMALIZE])
+    split = luigi.Parameter(default=TRAIN)
+    nimages = luigi.IntParameter(default=1)
 
-    loader = get_data_loader(
-        args.dataset, loader_name=args.loader,
-        batch_size=args.nimages, shuffle=False, split=args.split,
-        transform_names=args.transforms, cuda=args.cuda)
+    task_name = 'plot_data'
 
-    x, y = next(iter(loader))
-    images = np.transpose(x.numpy(), [0, 2, 3, 1])
-    labels = [loader.dataset.get_label(label_idx)
-              for label_idx in y.numpy()]
+    def output(self):
+        task_path = join(results_path, self.namespace, self.task_name)
+        # safe_makedirs(task_path)
+        plot_path = join(task_path, '{}_{}_{}.png'.format(
+            self.dataset, self.loader, self.split))
+        return luigi.LocalTarget(plot_path, format=luigi.format.Nop)
 
-    plot_path = join(
-        task_path, '{}_{}_{}.png'.format(
-            args.dataset, args.loader, args.split))
-    plot_images(plot_path, images, labels, ncols=4, normalize=True)
+    def run(self):
+        super(PlotDataTask).run()
 
+        loader = get_data_loader(
+            self.dataset, loader_name=self.loader,
+            batch_size=self.nimages, shuffle=False, split=self.split,
+            transform_names=self.transforms, cuda=self.cuda)
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Plot recognition data')
-    add_common_args(parser)
+        x, y = next(iter(loader))
+        images = np.transpose(x.numpy(), [0, 2, 3, 1])
+        labels = [loader.dataset.get_label(label_idx)
+                  for label_idx in y.numpy()]
 
-    parser.add_argument('--dataset', type=str, default=MNIST,
-                        help='name of the dataset')
-    parser.add_argument('--loader', type=str, default=DEFAULT,
-                        help='name of the dataset loader')
-    parser.add_argument('--transforms', type=str, nargs='*',
-                        default=[NORMALIZE],
-                        help='list of transform')
-
-    parser.add_argument('--split', type=str, default=TRAIN,
-                        help='name of the dataset split')
-    parser.add_argument('--nimages', type=int, default=1, metavar='N',
-                        help='how many images to plot')
-
-    args = parser.parse_args()
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-    return args
-
-
-if __name__ == '__main__':
-    plot_data(parse_args())
+        with self.output().open('wb') as plot_file:
+            plot_images(plot_file, images, labels, ncols=4, normalize=True)

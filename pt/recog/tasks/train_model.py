@@ -1,11 +1,10 @@
 from os.path import join
-import argparse
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
-
+import luigi
 
 from pt.common.settings import results_path, TRAIN, VAL
 from pt.common.utils import (
@@ -15,9 +14,7 @@ from pt.recog.data.factory import (
     get_data_loader, MNIST, DEFAULT, NORMALIZE)
 from pt.recog.models.factory import make_model
 from pt.recog.models.mini import MINI
-from pt.recog.tasks.utils import add_common_args
-
-TRAIN_MODEL = 'train_model'
+from pt.recog.tasks.utils import RecogTask
 
 
 def load_weights(namespace):
@@ -111,97 +108,71 @@ def val_epoch(epoch, val_loader, model, optimizer, cuda, log_interval,
     return val_loss, val_acc
 
 
-def train_model(args):
-    task_path = join(results_path, args.namespace, TRAIN_MODEL)
-    safe_makedirs(task_path)
-    model_path = join(task_path, 'model')
-    best_model_path = join(task_path, 'best_model')
+class TrainModelTask(RecogTask):
+    dataset = luigi.Parameter()
+    loader = luigi.Parameter(default=DEFAULT)
+    transforms = luigi.ListParameter(default=[NORMALIZE])
+    model_name = luigi.Parameter(default=MINI)
+    input_shape = luigi.ListParameter()
 
-    train_loader = get_data_loader(
-        args.dataset, loader_name=args.loader,
-        batch_size=args.batch_size, shuffle=True, split=TRAIN,
-        transform_names=args.transforms, cuda=args.cuda)
+    optimizer_name = luigi.Parameter(default=SGD)
+    lr = luigi.FloatParameter(default=0.01)
+    momentum = luigi.FloatParameter(default=0.5)
+    batch_size = luigi.IntParameter(default=64)
+    val_batch_size = luigi.IntParameter(default=1000)
+    epochs = luigi.IntParameter(default=10)
+    samples_per_epoch = luigi.IntParameter(default=None)
+    val_samples_per_epoch = luigi.IntParameter(default=None)
+    log_interval = luigi.IntParameter(default=10)
 
-    val_loader = get_data_loader(
-        args.dataset, loader_name=args.loader,
-        batch_size=args.val_batch_size, shuffle=False, split=VAL,
-        transform_names=args.transforms, cuda=args.cuda)
+    task_name = 'train_model'
 
-    model = make_model(args.model_name, args.input_shape)
-    if args.cuda:
-        model.cuda()
-
-    optimizer = get_optimizer(
-        args.optimizer_name, model.parameters(), lr=args.lr,
-        momentum=args.momentum)
-
-    log_path = join(task_path, 'log.csv')
-    first_epoch = setup_log(log_path)
-    if first_epoch > 1:
-        model.load_state_dict(load_weights(args.namespace))
-
-    min_val_loss = np.inf
-    for epoch in range(first_epoch, args.epochs + 1):
-        train_epoch(epoch, train_loader, model, optimizer, args.cuda,
-                    args.log_interval, args.samples_per_epoch)
-
-        val_loss, val_acc = val_epoch(
-            epoch, val_loader, model, optimizer, args.cuda, args.log_interval,
-            args.val_samples_per_epoch)
-
-        append_log(log_path, (epoch, val_loss, val_acc))
-        torch.save(model.state_dict(), model_path)
-        if val_loss < min_val_loss:
-            torch.save(model.state_dict(), best_model_path)
-            min_val_loss = val_loss
+    def output(self):
+        task_path = join(results_path, self.namespace, self.task_name)
+        model_path = join(task_path, 'model')
+        best_model_path = join(task_path, 'best_model')
+        log_path = join(task_path, 'log.csv')
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description='Train recognition model')
-    add_common_args(parser)
+    def run(self):
+        self.samples_per_epoch = None if self.samples_per_epoch == -1 \
+            else self.samples_per_epoch
+        self.val_samples_per_epoch = None if self.val_samples_per_epoch == -1 \
+            else self.val_samples_per_epoch
 
-    parser.add_argument('--dataset', type=str, default=MNIST,
-                        help='name of the dataset')
-    parser.add_argument('--loader', type=str, default=DEFAULT,
-                        help='name of the dataset loader')
-    parser.add_argument('--transforms', type=str, nargs='*',
-                        default=[NORMALIZE],
-                        help='list of transform')
+        train_loader = get_data_loader(
+            self.dataset, loader_name=self.loader,
+            batch_size=self.batch_size, shuffle=True, split=TRAIN,
+            transform_names=self.transforms, cuda=self.cuda)
 
-    parser.add_argument('--model-name', type=str, default=MINI,
-                        help='name of the model')
-    parser.add_argument('--input-shape', type=int, nargs='*',
-                        default=None,
-                        help='shape of input data')
+        val_loader = get_data_loader(
+            self.dataset, loader_name=self.loader,
+            batch_size=self.val_batch_size, shuffle=False, split=VAL,
+            transform_names=self.transforms, cuda=self.cuda)
 
-    parser.add_argument('--optimizer-name', type=str, default=SGD,
-                        help='name of the optimizer')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-                        help='learning rate (default: 0.01)')
-    parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
-                        help='SGD momentum (default: 0.5)')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
-                        help='input batch size for training (default: 64)')
-    parser.add_argument('--val-batch-size', type=int, default=1000,
-                        metavar='N',
-                        help='input batch size for validation (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
-                        help='number of epochs to train (default: 10)')
-    parser.add_argument('--samples-per-epoch', type=int, default=None)
-    parser.add_argument('--val-samples-per-epoch', type=int, default=None)
-    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                        help='how many batches to wait before' +
-                             'logging training status')
+        model = make_model(self.model_name, self.input_shape)
+        if self.cuda:
+            model.cuda()
 
-    args = parser.parse_args()
-    args.samples_per_epoch = None if args.samples_per_epoch == -1 \
-        else args.samples_per_epoch
-    args.val_samples_per_epoch = None if args.val_samples_per_epoch == -1 \
-        else args.val_samples_per_epoch
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
+        optimizer = get_optimizer(
+            self.optimizer_name, model.parameters(), lr=self.lr,
+            momentum=self.momentum)
 
-    return args
+        first_epoch = setup_log(log_path)
+        if first_epoch > 1:
+            model.load_state_dict(load_weights(self.namespace))
 
+        min_val_loss = np.inf
+        for epoch in range(first_epoch, self.epochs + 1):
+            train_epoch(epoch, train_loader, model, optimizer, self.cuda,
+                        self.log_interval, self.samples_per_epoch)
 
-if __name__ == '__main__':
-    train_model(parse_args())
+            val_loss, val_acc = val_epoch(
+                epoch, val_loader, model, optimizer, self.cuda, self.log_interval,
+                self.val_samples_per_epoch)
+
+            append_log(log_path, (epoch, val_loss, val_acc))
+            torch.save(model.state_dict(), model_path)
+            if val_loss < min_val_loss:
+                torch.save(model.state_dict(), best_model_path)
+                min_val_loss = val_loss
