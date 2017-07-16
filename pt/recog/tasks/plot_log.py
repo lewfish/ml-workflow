@@ -1,5 +1,4 @@
 from os.path import join
-import argparse
 
 import matplotlib as mpl
 # For headless environments
@@ -9,17 +8,22 @@ import matplotlib.pyplot as plt
 from pt.common.settings import results_path
 from pt.common.utils import safe_makedirs
 from pt.recog.tasks.train_model import load_log
-from pt.recog.tasks.utils import add_common_args
+from pt.recog.tasks.args import CommonArgs
 
 PLOT_LOG = 'plot_log'
 
 
-def plot_log(args):
-    task_path = join(results_path, args.namespace, PLOT_LOG)
+class PlotLogArgs():
+    def __init__(self, common=CommonArgs()):
+        self.common = common
+
+
+def plot_log(args=PlotLogArgs()):
+    task_path = join(results_path, args.common.namespace, PLOT_LOG)
     plot_path = join(task_path, 'plot.png')
     safe_makedirs(task_path)
 
-    log = load_log(args.namespace)
+    log = load_log(args.common.namespace)
 
     plt.figure()
     plt.grid()
@@ -38,15 +42,3 @@ def plot_log(args):
     plt.plot(epochs, test_acc, '-', label='Test Accuracy')
 
     plt.savefig(plot_path)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Plot recognition data')
-    add_common_args(parser)
-    args = parser.parse_args()
-
-    return args
-
-
-if __name__ == '__main__':
-    plot_log(parse_args())

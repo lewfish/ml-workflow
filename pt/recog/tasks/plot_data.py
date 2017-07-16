@@ -1,18 +1,15 @@
 from os.path import join
-import argparse
 
 import matplotlib as mpl
 # For headless environments
 mpl.use('Agg') # NOQA
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
 
 from pt.common.settings import results_path, TRAIN
 from pt.common.utils import safe_makedirs
-from pt.recog.data.factory import (
-    get_data_loader, MNIST, DEFAULT, NORMALIZE)
-from pt.recog.tasks.utils import add_common_args
+from pt.recog.data.factory import get_data_loader
+from pt.recog.tasks.args import CommonArgs, DatasetArgs
 
 PLOT_DATA = 'plot_data'
 
@@ -49,14 +46,23 @@ def plot_images(plot_path, images, labels, ncols=4, normalize=True):
     plt.savefig(plot_path)
 
 
-def plot_data(args):
-    task_path = join(results_path, args.namespace, PLOT_DATA)
+class PlotDataArgs():
+    def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
+                 split=TRAIN, nimages=1):
+        self.common = common
+        self.dataset = dataset
+        self.split = split
+        self.nimages = nimages
+
+
+def plot_data(args=PlotDataArgs()):
+    task_path = join(results_path, args.common.namespace, PLOT_DATA)
     safe_makedirs(task_path)
 
     loader = get_data_loader(
-        args.dataset, loader_name=args.loader,
+        args.dataset.dataset, loader_name=args.dataset.loader,
         batch_size=args.nimages, shuffle=False, split=args.split,
-        transform_names=args.transforms, cuda=args.cuda)
+        transform_names=args.dataset.transforms, cuda=args.common.cuda)
 
     x, y = next(iter(loader))
     images = np.transpose(x.numpy(), [0, 2, 3, 1])
@@ -65,32 +71,5 @@ def plot_data(args):
 
     plot_path = join(
         task_path, '{}_{}_{}.png'.format(
-            args.dataset, args.loader, args.split))
+            args.dataset.dataset, args.dataset.loader, args.split))
     plot_images(plot_path, images, labels, ncols=4, normalize=True)
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Plot recognition data')
-    add_common_args(parser)
-
-    parser.add_argument('--dataset', type=str, default=MNIST,
-                        help='name of the dataset')
-    parser.add_argument('--loader', type=str, default=DEFAULT,
-                        help='name of the dataset loader')
-    parser.add_argument('--transforms', type=str, nargs='*',
-                        default=[NORMALIZE],
-                        help='list of transform')
-
-    parser.add_argument('--split', type=str, default=TRAIN,
-                        help='name of the dataset split')
-    parser.add_argument('--nimages', type=int, default=1, metavar='N',
-                        help='how many images to plot')
-
-    args = parser.parse_args()
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-    return args
-
-
-if __name__ == '__main__':
-    plot_data(parse_args())

@@ -1,21 +1,20 @@
 from os.path import join
-import argparse
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-
 from pt.common.settings import results_path, TRAIN, VAL
 from pt.common.utils import (
     safe_makedirs, append_log, setup_log)
-from pt.common.optimizers import get_optimizer, SGD
-from pt.recog.data.factory import (
-    get_data_loader, MNIST, DEFAULT, NORMALIZE)
+from pt.common.optimizers import get_optimizer
+
+from pt.recog.data.factory import get_data_loader
 from pt.recog.models.factory import make_model
-from pt.recog.models.mini import MINI
-from pt.recog.tasks.utils import add_common_args
+from pt.recog.tasks.args import (
+    CommonArgs, DatasetArgs, ModelArgs, TrainArgs)
+
 
 TRAIN_MODEL = 'train_model'
 
@@ -45,7 +44,7 @@ def train_epoch(epoch, train_loader, model, optimizer, cuda, log_interval,
         x, y = Variable(x), Variable(y)
 
         if sample_count + len(x) > nsamples:
-            extra_samples = sample_count - nsamples
+            extra_samples = sample_count + len(x) - nsamples
             samples_to_keep = len(x) - extra_samples
             x = x.narrow(0, 0, samples_to_keep)
             y = y.narrow(0, 0, samples_to_keep)
@@ -111,97 +110,55 @@ def val_epoch(epoch, val_loader, model, optimizer, cuda, log_interval,
     return val_loss, val_acc
 
 
-def train_model(args):
-    task_path = join(results_path, args.namespace, TRAIN_MODEL)
+class TrainModelArgs():
+    def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
+                 model=ModelArgs(), train=TrainArgs()):
+        self.common = common
+        self.dataset = dataset
+        self.model = model
+        self.train = train
+
+
+def train_model(args=TrainModelArgs()):
+    task_path = join(results_path, args.common.namespace, TRAIN_MODEL)
     safe_makedirs(task_path)
     model_path = join(task_path, 'model')
     best_model_path = join(task_path, 'best_model')
 
     train_loader = get_data_loader(
-        args.dataset, loader_name=args.loader,
-        batch_size=args.batch_size, shuffle=True, split=TRAIN,
-        transform_names=args.transforms, cuda=args.cuda)
+        args.dataset.dataset, loader_name=args.dataset.loader,
+        batch_size=args.train.batch_size, shuffle=True, split=TRAIN,
+        transform_names=args.dataset.transforms, cuda=args.common.cuda)
 
     val_loader = get_data_loader(
-        args.dataset, loader_name=args.loader,
-        batch_size=args.val_batch_size, shuffle=False, split=VAL,
-        transform_names=args.transforms, cuda=args.cuda)
+        args.dataset.dataset, loader_name=args.dataset.loader,
+        batch_size=args.train.val_batch_size, shuffle=False, split=VAL,
+        transform_names=args.dataset.transforms, cuda=args.common.cuda)
 
-    model = make_model(args.model_name, args.input_shape)
-    if args.cuda:
+    model = make_model(args.model.model, args.model.input_shape)
+    if args.common.cuda:
         model.cuda()
 
     optimizer = get_optimizer(
-        args.optimizer_name, model.parameters(), lr=args.lr,
-        momentum=args.momentum)
+        args.train.optimizer.optimizer, model.parameters(),
+        lr=args.train.optimizer.lr, momentum=args.train.optimizer.momentum)
 
     log_path = join(task_path, 'log.csv')
     first_epoch = setup_log(log_path)
     if first_epoch > 1:
-        model.load_state_dict(load_weights(args.namespace))
+        model.load_state_dict(load_weights(args.common.namespace))
 
     min_val_loss = np.inf
-    for epoch in range(first_epoch, args.epochs + 1):
-        train_epoch(epoch, train_loader, model, optimizer, args.cuda,
-                    args.log_interval, args.samples_per_epoch)
+    for epoch in range(first_epoch, args.train.epochs + 1):
+        train_epoch(epoch, train_loader, model, optimizer, args.common.cuda,
+                    args.train.log_interval, args.train.samples_per_epoch)
 
         val_loss, val_acc = val_epoch(
-            epoch, val_loader, model, optimizer, args.cuda, args.log_interval,
-            args.val_samples_per_epoch)
+            epoch, val_loader, model, optimizer, args.common.cuda,
+            args.train.log_interval, args.train.val_samples_per_epoch)
 
         append_log(log_path, (epoch, val_loss, val_acc))
         torch.save(model.state_dict(), model_path)
         if val_loss < min_val_loss:
             torch.save(model.state_dict(), best_model_path)
             min_val_loss = val_loss
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(description='Train recognition model')
-    add_common_args(parser)
-
-    parser.add_argument('--dataset', type=str, default=MNIST,
-                        help='name of the dataset')
-    parser.add_argument('--loader', type=str, default=DEFAULT,
-                        help='name of the dataset loader')
-    parser.add_argument('--transforms', type=str, nargs='*',
-                        default=[NORMALIZE],
-                        help='list of transform')
-
-    parser.add_argument('--model-name', type=str, default=MINI,
-                        help='name of the model')
-    parser.add_argument('--input-shape', type=int, nargs='*',
-                        default=None,
-                        help='shape of input data')
-
-    parser.add_argument('--optimizer-name', type=str, default=SGD,
-                        help='name of the optimizer')
-    parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-                        help='learning rate (default: 0.01)')
-    parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
-                        help='SGD momentum (default: 0.5)')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
-                        help='input batch size for training (default: 64)')
-    parser.add_argument('--val-batch-size', type=int, default=1000,
-                        metavar='N',
-                        help='input batch size for validation (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
-                        help='number of epochs to train (default: 10)')
-    parser.add_argument('--samples-per-epoch', type=int, default=None)
-    parser.add_argument('--val-samples-per-epoch', type=int, default=None)
-    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                        help='how many batches to wait before' +
-                             'logging training status')
-
-    args = parser.parse_args()
-    args.samples_per_epoch = None if args.samples_per_epoch == -1 \
-        else args.samples_per_epoch
-    args.val_samples_per_epoch = None if args.val_samples_per_epoch == -1 \
-        else args.val_samples_per_epoch
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-    return args
-
-
-if __name__ == '__main__':
-    train_model(parse_args())
