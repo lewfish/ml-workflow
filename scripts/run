@@ -22,7 +22,7 @@ then
         docker run --rm -it \
             -v "$SRC_DIR":/opt/src \
             -v "$DATA_DIR":/opt/data \
-            -p 8888:8888 \
+            -v ~/.aws:/root/.aws \
             pytorch "${@:2}"
     else
         usage

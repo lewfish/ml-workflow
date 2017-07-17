@@ -1,4 +1,4 @@
-from os.path import join, exists
+from os.path import join, exists, dirname
 
 import boto3
 import botocore
@@ -17,6 +17,7 @@ def s3_download(path):
     s3 = boto3.resource('s3')
     key = join(s3_results_dir, path)
     local_path = join(results_path, path)
+    safe_makedirs(dirname(local_path))
     try:
         s3.meta.client.download_file(s3_bucket, key, local_path)
     except botocore.exceptions.ClientError as e:
@@ -69,15 +70,6 @@ class Task():
         for output_path in output_paths:
             s3_upload(output_path)
 
-    def get_input_paths(self):
-        return []
-
-    def get_output_paths(self):
-        return []
-
-    def run(self):
-        raise NotImplementedError()
-
     def __call__(self):
         self._make_task_dir()
         if is_remote:
@@ -87,7 +79,17 @@ class Task():
             if is_remote:
                 self._upload_outputs()
         else:
-            raise ValueError('Task {} is not runnable'.format(self.task_name))
+            raise ValueError('Task {} is missing input files!'.format(
+                self.task_name))
+
+    def get_input_paths(self):
+        return []
+
+    def get_output_paths(self):
+        return [join(self.namespace, self.task_name)]
+
+    def run(self):
+        raise NotImplementedError()
 
 
 class TestTask(Task):
@@ -95,16 +97,16 @@ class TestTask(Task):
         super().__init__(args, namespace, 'test_task')
 
     def get_input_paths(self):
-        return ['test_namespace/other_task/out.txt']
-
-    def get_output_paths(self):
-        paths = ['out.txt']
-        return map(lambda path: join(self.task_path, path), paths)
+        return ['test_namespace/other_task']
 
     def run(self):
-        out_path = join(self.task_path, 'out.txt')
-        with open(out_path, 'w') as out_file:
-            out_file.write(str(self.args))
+        out_path = join(self.task_path, 'out')
+        safe_makedirs(out_path)
+
+        for i in range(2):
+            number_path = join(out_path, 'number{}.txt'.format(i))
+            with open(number_path, 'w') as number_file:
+                number_file.write(str(i))
 
 
 if __name__ == '__main__':
