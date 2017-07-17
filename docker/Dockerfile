@@ -30,7 +30,7 @@ RUN conda install -y scikit-learn scikit-image six h5py \
         matplotlib pillow jupyter && \
     conda clean -yt
 
-RUN pip install flake8 boto3 networkx
+RUN pip install flake8 boto3 networkx awscli
 
 RUN mkdir /opt/data && chmod -R a+w /opt/data
 RUN mkdir /opt/src && chmod -R a+w /opt/src

@@ -1,43 +1,24 @@
-from os.path import join, exists, dirname
-
-import boto3
-import botocore
+from os.path import join, exists
+from subprocess import call
 
 from pt.common.utils import safe_makedirs
 from pt.common.settings import (
-    is_remote, results_path, s3_results_dir, s3_bucket)
+    is_remote, results_path, s3_results_path)
 
 
 def local_path_exists(path):
+    return exists(join(results_path, path))
+
+
+def s3_sync(path, is_download=True):
+    # Using aws cli instead of boto because boto does not have
+    # ability to upload/download recursively based on prefix.
     local_path = join(results_path, path)
-    return exists(local_path)
-
-
-def s3_download(path):
-    s3 = boto3.resource('s3')
-    key = join(s3_results_dir, path)
-    local_path = join(results_path, path)
-    safe_makedirs(dirname(local_path))
-    try:
-        s3.meta.client.download_file(s3_bucket, key, local_path)
-    except botocore.exceptions.ClientError as e:
-        if e.response['Error']['Code'] == '404':
-            print('The object {} does not exist.'.format(key))
-        else:
-            raise
-
-
-def s3_upload(path):
-    s3 = boto3.resource('s3')
-    key = join(s3_results_dir, path)
-    local_path = join(results_path, path)
-    try:
-        s3.meta.client.upload_file(local_path, s3_bucket, key)
-    except botocore.exceptions.ClientError as e:
-        if e.response['Error']['Code'] == '404':
-            print('The object {} does not exist.'.format(key))
-        else:
-            raise
+    remote_path = join(s3_results_path, path)
+    if is_download:
+        call(['aws', 's3', 'sync', remote_path, local_path])
+    else:
+        call(['aws', 's3', 'sync', local_path, remote_path])
 
 
 class Task():
@@ -55,20 +36,26 @@ class Task():
     def _download_inputs(self):
         input_paths = self.get_input_paths()
         for input_path in input_paths:
-            if not local_path_exists(input_path):
-                s3_download(input_path)
-
-    def _is_runnable(self):
-        input_paths = self.get_input_paths()
-        for input_path in input_paths:
-            if not local_path_exists(input_path):
-                return False
-        return True
+            s3_sync(input_path, is_download=True)
 
     def _upload_outputs(self):
         output_paths = self.get_output_paths()
         for output_path in output_paths:
-            s3_upload(output_path)
+            s3_sync(output_path, is_download=False)
+
+    def _is_runnable(self):
+        path_missing = False
+        input_paths = self.get_input_paths()
+        for input_path in input_paths:
+            if not local_path_exists(input_path):
+                print('{} does not exist!'.format(input_path))
+                path_missing = True
+        return not path_missing
+
+    def get_local_path(self, path, namespace=None, task_name=None):
+        namespace = self.namespace if namespace is None else namespace
+        task_name = self.task_name if task_name is None else namespace
+        return join(results_path, namespace, task_name, path)
 
     def __call__(self):
         self._make_task_dir()
@@ -100,7 +87,7 @@ class TestTask(Task):
         return ['test_namespace/other_task']
 
     def run(self):
-        out_path = join(self.task_path, 'out')
+        out_path = self.get_local_path('out')
         safe_makedirs(out_path)
 
         for i in range(2):
