@@ -5,19 +5,19 @@ from pt.recog.data.factory import MNIST, DEFAULT, NORMALIZE
 from pt.recog.models.mini import MINI
 from pt.recog.tasks.args import (
     CommonArgs, DatasetArgs, ModelArgs, OptimizerArgs, TrainArgs)
-from pt.recog.tasks.plot_data import plot_data, PlotDataArgs
-from pt.recog.tasks.train_model import train_model, TrainModelArgs
-from pt.recog.tasks.save_gt import save_gt, SaveGtArgs
-from pt.recog.tasks.plot_log import plot_log, PlotLogArgs
-from pt.recog.tasks.infer_probs import infer_probs, InferProbsArgs
-from pt.recog.tasks.infer_preds import infer_preds, InferPredsArgs
-from pt.recog.tasks.compute_scores import compute_scores, ComputeScoresArgs
-from pt.recog.tasks.plot_preds import plot_preds, PlotPredsArgs
+from pt.recog.tasks.plot_data import PlotData
+from pt.recog.tasks.train_model import TrainModel
+from pt.recog.tasks.save_gt import SaveGt
+from pt.recog.tasks.plot_log import PlotLog
+from pt.recog.tasks.infer_probs import InferProbs
+from pt.recog.tasks.infer_preds import InferPreds
+from pt.recog.tasks.compute_scores import ComputeScores
+from pt.recog.tasks.plot_preds import PlotPreds
 
 
 def run():
+    namespace = 'recog/mnist_test'
     common = CommonArgs(
-        namespace='recog/mnist_test',
         cuda=False,
         seed=None)
     dataset = DatasetArgs(
@@ -41,24 +41,24 @@ def run():
         log_interval=1)
     nsamples = 8
 
-    plot_data(PlotDataArgs(
-        common=common, dataset=dataset, split=TRAIN, nimages=8))
-    train_model(TrainModelArgs(
-        common=common, dataset=dataset, model=model, train=train))
-    plot_log(PlotLogArgs(common=common))
+    PlotData(namespace, PlotData.Args(
+        common=common, dataset=dataset, split=TRAIN, nimages=8))()
+    TrainModel(namespace, TrainModel.Args(
+        common=common, dataset=dataset, model=model, train=train))()
+    PlotLog(namespace, PlotLog.Args(common=common))()
 
     for split in [TRAIN, VAL]:
-        save_gt(SaveGtArgs(
+        SaveGt(namespace, SaveGt.Args(
             common=common, dataset=dataset, split=split,
-            nsamples=nsamples))
-        infer_probs(InferProbsArgs(
+            nsamples=nsamples))()
+        InferProbs(namespace, InferProbs.Args(
             common=common, dataset=dataset, model=model, split=split,
-            batch_size=100, nsamples=nsamples))
-        infer_preds(InferPredsArgs(common=common, split=split))
+            batch_size=100, nsamples=nsamples))()
+        InferPreds(namespace, InferPreds.Args(common=common, split=split))()
 
-    compute_scores(ComputeScoresArgs(common=common))
-    plot_preds(PlotPredsArgs(
-        common=common, dataset=dataset, max_plots=nsamples))
+    ComputeScores(namespace, ComputeScores.Args(common=common))()
+    PlotPreds(namespace, PlotPreds.Args(
+        common=common, dataset=dataset, max_plots=nsamples))()
 
 
 if __name__ == '__main__':

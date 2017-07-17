@@ -5,9 +5,10 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from pt.common.settings import results_path, TRAIN, VAL
+from pt.common.settings import TRAIN, VAL, results_path
 from pt.common.utils import (
-    safe_makedirs, append_log, setup_log)
+    append_log, setup_log)
+from pt.common.task import Task
 from pt.common.optimizers import get_optimizer
 
 from pt.recog.data.factory import get_data_loader
@@ -110,55 +111,57 @@ def val_epoch(epoch, val_loader, model, optimizer, cuda, log_interval,
     return val_loss, val_acc
 
 
-class TrainModelArgs():
-    def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
-                 model=ModelArgs(), train=TrainArgs()):
-        self.common = common
-        self.dataset = dataset
-        self.model = model
-        self.train = train
+class TrainModel(Task):
+    task_name = TRAIN_MODEL
 
+    class Args():
+        def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
+                     model=ModelArgs(), train=TrainArgs()):
+            self.common = common
+            self.dataset = dataset
+            self.model = model
+            self.train = train
 
-def train_model(args=TrainModelArgs()):
-    task_path = join(results_path, args.common.namespace, TRAIN_MODEL)
-    safe_makedirs(task_path)
-    model_path = join(task_path, 'model')
-    best_model_path = join(task_path, 'best_model')
+    def run(self):
+        args = self.args
+        model_path = self.get_local_path('model')
+        best_model_path = self.get_local_path('best_model')
 
-    train_loader = get_data_loader(
-        args.dataset.dataset, loader_name=args.dataset.loader,
-        batch_size=args.train.batch_size, shuffle=True, split=TRAIN,
-        transform_names=args.dataset.transforms, cuda=args.common.cuda)
+        train_loader = get_data_loader(
+            args.dataset.dataset, loader_name=args.dataset.loader,
+            batch_size=args.train.batch_size, shuffle=True, split=TRAIN,
+            transform_names=args.dataset.transforms, cuda=args.common.cuda)
 
-    val_loader = get_data_loader(
-        args.dataset.dataset, loader_name=args.dataset.loader,
-        batch_size=args.train.val_batch_size, shuffle=False, split=VAL,
-        transform_names=args.dataset.transforms, cuda=args.common.cuda)
+        val_loader = get_data_loader(
+            args.dataset.dataset, loader_name=args.dataset.loader,
+            batch_size=args.train.val_batch_size, shuffle=False, split=VAL,
+            transform_names=args.dataset.transforms, cuda=args.common.cuda)
 
-    model = make_model(args.model.model, args.model.input_shape)
-    if args.common.cuda:
-        model.cuda()
+        model = make_model(args.model.model, args.model.input_shape)
+        if args.common.cuda:
+            model.cuda()
 
-    optimizer = get_optimizer(
-        args.train.optimizer.optimizer, model.parameters(),
-        lr=args.train.optimizer.lr, momentum=args.train.optimizer.momentum)
+        optimizer = get_optimizer(
+            args.train.optimizer.optimizer, model.parameters(),
+            lr=args.train.optimizer.lr, momentum=args.train.optimizer.momentum)
 
-    log_path = join(task_path, 'log.csv')
-    first_epoch = setup_log(log_path)
-    if first_epoch > 1:
-        model.load_state_dict(load_weights(args.common.namespace))
+        log_path = self.get_local_path('log.csv')
+        first_epoch = setup_log(log_path)
+        if first_epoch > 1:
+            model.load_state_dict(load_weights(self.namespace))
 
-    min_val_loss = np.inf
-    for epoch in range(first_epoch, args.train.epochs + 1):
-        train_epoch(epoch, train_loader, model, optimizer, args.common.cuda,
-                    args.train.log_interval, args.train.samples_per_epoch)
+        min_val_loss = np.inf
+        for epoch in range(first_epoch, args.train.epochs + 1):
+            train_epoch(epoch, train_loader, model, optimizer,
+                        args.common.cuda, args.train.log_interval,
+                        args.train.samples_per_epoch)
 
-        val_loss, val_acc = val_epoch(
-            epoch, val_loader, model, optimizer, args.common.cuda,
-            args.train.log_interval, args.train.val_samples_per_epoch)
+            val_loss, val_acc = val_epoch(
+                epoch, val_loader, model, optimizer, args.common.cuda,
+                args.train.log_interval, args.train.val_samples_per_epoch)
 
-        append_log(log_path, (epoch, val_loss, val_acc))
-        torch.save(model.state_dict(), model_path)
-        if val_loss < min_val_loss:
-            torch.save(model.state_dict(), best_model_path)
-            min_val_loss = val_loss
+            append_log(log_path, (epoch, val_loss, val_acc))
+            torch.save(model.state_dict(), model_path)
+            if val_loss < min_val_loss:
+                torch.save(model.state_dict(), best_model_path)
+                min_val_loss = val_loss

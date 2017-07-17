@@ -4,8 +4,7 @@ from pt.common.optimizers import SGD
 
 
 class CommonArgs():
-    def __init__(self, namespace=None, cuda=False, seed=None):
-        self.namespace = namespace
+    def __init__(self, cuda=False, seed=None):
         self.cuda = cuda
         self.seed = seed
 

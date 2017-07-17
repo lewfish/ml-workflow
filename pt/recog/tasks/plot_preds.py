@@ -6,12 +6,12 @@ import matplotlib as mpl
 mpl.use('Agg') # NOQA
 import matplotlib.pyplot as plt
 
-from pt.common.settings import results_path, VAL
-from pt.common.utils import safe_makedirs
-from pt.recog.data.factory import (
-    get_data_loader, MNIST, DEFAULT)
-from pt.recog.tasks.infer_preds import load_preds
-from pt.recog.tasks.save_gt import load_gt
+from pt.common.settings import VAL
+from pt.common.task import Task
+
+from pt.recog.data.factory import get_data_loader
+from pt.recog.tasks.infer_preds import load_preds, INFER_PREDS
+from pt.recog.tasks.save_gt import load_gt, SAVE_GT
 from pt.recog.tasks.args import CommonArgs, DatasetArgs
 
 PLOT_PREDS = 'plot_preds'
@@ -47,25 +47,32 @@ def _plot_preds(y_preds, y_gt, dataset, task_path, max_plots):
             break
 
 
-class PlotPredsArgs():
-    def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
-                 max_plots=8):
-        self.common = common
-        self.dataset = dataset
-        self.max_plots = max_plots
+class PlotPreds(Task):
+    task_name = PLOT_PREDS
 
+    class Args():
+        def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
+                     max_plots=8):
+            self.common = common
+            self.dataset = dataset
+            self.max_plots = max_plots
 
-def plot_preds(args=PlotPredsArgs()):
-    task_path = join(results_path, args.common.namespace, PLOT_PREDS)
-    safe_makedirs(task_path)
+    def get_input_paths(self):
+        return [
+            join(self.namespace, INFER_PREDS),
+            join(self.namespace, SAVE_GT)]
 
-    split = VAL
-    y_preds = load_preds(args.common.namespace, split)
-    y_gt = load_gt(args.common.namespace, split)
+    def run(self):
+        args = self.args
 
-    loader = get_data_loader(
-        args.dataset.dataset, loader_name=args.dataset.loader,
-        batch_size=1, shuffle=False, split=split,
-        cuda=False)
+        split = VAL
+        y_preds = load_preds(self.namespace, split)
+        y_gt = load_gt(self.namespace, split)
 
-    _plot_preds(y_preds, y_gt, loader.dataset, task_path, args.max_plots)
+        loader = get_data_loader(
+            args.dataset.dataset, loader_name=args.dataset.loader,
+            batch_size=1, shuffle=False, split=split,
+            cuda=False)
+
+        _plot_preds(
+            y_preds, y_gt, loader.dataset, self.task_path, args.max_plots)

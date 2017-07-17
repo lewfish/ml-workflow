@@ -6,8 +6,9 @@ mpl.use('Agg') # NOQA
 import matplotlib.pyplot as plt
 import numpy as np
 
-from pt.common.settings import results_path, TRAIN
-from pt.common.utils import safe_makedirs
+from pt.common.settings import TRAIN
+from pt.common.task import Task
+
 from pt.recog.data.factory import get_data_loader
 from pt.recog.tasks.args import CommonArgs, DatasetArgs
 
@@ -46,30 +47,29 @@ def plot_images(plot_path, images, labels, ncols=4, normalize=True):
     plt.savefig(plot_path)
 
 
-class PlotDataArgs():
-    def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
-                 split=TRAIN, nimages=1):
-        self.common = common
-        self.dataset = dataset
-        self.split = split
-        self.nimages = nimages
+class PlotData(Task):
+    task_name = PLOT_DATA
 
+    class Args():
+        def __init__(self, common=CommonArgs(), dataset=DatasetArgs(),
+                     split=TRAIN, nimages=1):
+            self.common = common
+            self.dataset = dataset
+            self.split = split
+            self.nimages = nimages
 
-def plot_data(args=PlotDataArgs()):
-    task_path = join(results_path, args.common.namespace, PLOT_DATA)
-    safe_makedirs(task_path)
+    def run(self):
+        args = self.args
+        loader = get_data_loader(
+            args.dataset.dataset, loader_name=args.dataset.loader,
+            batch_size=args.nimages, shuffle=False, split=args.split,
+            transform_names=args.dataset.transforms, cuda=args.common.cuda)
 
-    loader = get_data_loader(
-        args.dataset.dataset, loader_name=args.dataset.loader,
-        batch_size=args.nimages, shuffle=False, split=args.split,
-        transform_names=args.dataset.transforms, cuda=args.common.cuda)
+        x, y = next(iter(loader))
+        images = np.transpose(x.numpy(), [0, 2, 3, 1])
+        labels = [loader.dataset.get_label(label_idx)
+                  for label_idx in y.numpy()]
 
-    x, y = next(iter(loader))
-    images = np.transpose(x.numpy(), [0, 2, 3, 1])
-    labels = [loader.dataset.get_label(label_idx)
-              for label_idx in y.numpy()]
-
-    plot_path = join(
-        task_path, '{}_{}_{}.png'.format(
-            args.dataset.dataset, args.dataset.loader, args.split))
-    plot_images(plot_path, images, labels, ncols=4, normalize=True)
+        plot_path = self.get_local_path('{}_{}_{}.png'.format(
+                args.dataset.dataset, args.dataset.loader, args.split))
+        plot_images(plot_path, images, labels, ncols=4, normalize=True)

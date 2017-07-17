@@ -2,10 +2,12 @@ from os.path import join
 
 import numpy as np
 
-from pt.common.settings import results_path, VAL
-from pt.common.utils import safe_makedirs, save_json
-from pt.recog.tasks.infer_preds import load_preds
-from pt.recog.tasks.save_gt import load_gt
+from pt.common.settings import VAL
+from pt.common.utils import save_json
+from pt.common.task import Task
+
+from pt.recog.tasks.infer_preds import load_preds, INFER_PREDS
+from pt.recog.tasks.save_gt import load_gt, SAVE_GT
 from pt.recog.tasks.args import CommonArgs
 
 COMPUTE_SCORES = 'compute_scores'
@@ -21,19 +23,23 @@ def _compute_scores(y_preds, y_gt):
     }
 
 
-class ComputeScoresArgs():
-    def __init__(self, common=CommonArgs()):
-        self.common = common
+class ComputeScores(Task):
+    task_name = COMPUTE_SCORES
 
+    class Args():
+        def __init__(self, common=CommonArgs()):
+            self.common = common
 
-def compute_scores(args=ComputeScoresArgs()):
-    task_path = join(results_path, args.common.namespace, COMPUTE_SCORES)
-    safe_makedirs(task_path)
+    def get_input_paths(self):
+        return [
+            join(self.namespace, INFER_PREDS),
+            join(self.namespace, SAVE_GT)]
 
-    split = VAL
-    y_preds = load_preds(args.common.namespace, split)
-    y_gt = load_gt(args.common.namespace, split)
+    def run(self):
+        split = VAL
+        y_preds = load_preds(self.namespace, split)
+        y_gt = load_gt(self.namespace, split)
 
-    scores_path = join(task_path, 'scores.json')
-    scores = _compute_scores(y_preds, y_gt)
-    save_json(scores, scores_path)
+        scores_path = self.get_local_path('scores.json')
+        scores = _compute_scores(y_preds, y_gt)
+        save_json(scores, scores_path)

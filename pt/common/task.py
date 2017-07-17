@@ -22,10 +22,13 @@ def s3_sync(path, is_download=True):
 
 
 class Task():
-    def __init__(self, args, namespace, task_name):
-        self.args = args
+    task_name = None
+
+    def __init__(self, namespace, args=None):
+        if self.task_name is None:
+            raise ValueError('task_name needs to be set by derived classes!')
         self.namespace = namespace
-        self.task_name = task_name
+        self.args = args
 
         self.namespace_path = join(results_path, self.namespace)
         self.task_path = join(self.namespace_path, self.task_name)
@@ -58,6 +61,7 @@ class Task():
         return join(results_path, namespace, task_name, path)
 
     def __call__(self):
+        print('Running {}...'.format(self.task_name))
         self._make_task_dir()
         if is_remote:
             self._download_inputs()
@@ -80,8 +84,7 @@ class Task():
 
 
 class TestTask(Task):
-    def __init__(self, args, namespace):
-        super().__init__(args, namespace, 'test_task')
+    task_name = 'test_task'
 
     def get_input_paths(self):
         return ['test_namespace/other_task']
@@ -97,6 +100,6 @@ class TestTask(Task):
 
 
 if __name__ == '__main__':
-    args = 5
     namespace = 'test_namespace'
-    TestTask(args, namespace)()
+    args = 5
+    TestTask(namespace, args)()
